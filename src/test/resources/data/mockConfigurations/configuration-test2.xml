@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<configurations xmlns="http://xsd.technolords.net">
+    <!--+
+        | Supported GET requests
+        +-->
+	<configuration type="GET" url="/mock/groovy">
+		<script language="groovy"><![CDATA[
+  class testClass {
+    String testMethod(vijftiger) { "OOTE OOTE $vijftiger" }
+  }			
+		]]></script>
+	</configuration>
+</configurations>	

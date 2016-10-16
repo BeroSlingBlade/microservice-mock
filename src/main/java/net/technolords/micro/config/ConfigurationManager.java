@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 import javax.xml.XMLConstants;
@@ -21,6 +22,7 @@ import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
+import javax.xml.ws.Response;
 import javax.xml.xpath.XPathExpressionException;
 
 import org.slf4j.Logger;
@@ -33,13 +35,18 @@ import net.technolords.micro.config.jaxb.Configurations;
 import net.technolords.micro.config.jaxb.resource.ResourceGroup;
 import net.technolords.micro.config.jaxb.resource.ResourceGroups;
 import net.technolords.micro.config.jaxb.resource.SimpleResource;
+import net.technolords.micro.config.jaxb.script.Script;
 
+/**
+ * Created by Technolords on 2016-Jul-20.
+ */
 public class ConfigurationManager {
     private final Logger LOGGER = LoggerFactory.getLogger(getClass());
     public static final String HTTP_POST = "POST";
     public static final String HTTP_GET = "GET";
     private static final String PATH_TO_CONFIG_FILE = "xml/configuration.xml";
     private static final String PATH_TO_SCHEMA_FILE = "xsd/configurations.xsd";
+    private static final String SCRIPT_METHOD = "mock";
     private Configurations configurations = null;
     private XpathEvaluator xpathEvaluator = null;
     private Path pathToDataFolder = null;
@@ -89,14 +96,22 @@ public class ConfigurationManager {
      */
     public ResponseContext findResponseForGetOperationWithPath(String path) throws JAXBException, IOException, InterruptedException {
         LOGGER.debug("About to find response for get operation with path: {}", path);
-        if (this.getConfigurations.containsKey(path)) {
-            LOGGER.debug("... found, proceeding to the data part...");
-            Configuration configuration = this.getConfigurations.get(path);
-            SimpleResource resource = configuration.getSimpleResource();
-            // Load and update cache
-            LOGGER.debug("About to load data from: {}", resource.getResource());
-            return this.readResourceCacheOrFile(resource);
-        }
+        
+        Configuration configuration = findMatchingConfigurationForPathByKey(this.getConfigurations, path);
+        if (configuration!=null) {
+        	LOGGER.debug("... found, checking for script to execute...");
+            if (!(configuration.getScript()==null)) {
+            	LOGGER.debug("...found, about to retrieve script from configuration...");
+            	Script script = configuration.getScript();
+            	LOGGER.debug("... done, proceeding to execution of [{}]", script.getScriptSource());
+            	return this.invokeMethodFromScriptWithParameter(script, new Object[] {path});           	
+            } else if (configuration.getSimpleResource()!=null){
+            	SimpleResource resource = configuration.getSimpleResource();
+            	// Load and update cache
+            	LOGGER.debug("About to load data from: {}", resource.getResource());
+            	return this.readResourceCacheOrFile(resource);
+            }
+        } 
         LOGGER.debug("... not found!");
         return null;
     }
@@ -123,22 +138,30 @@ public class ConfigurationManager {
      */
     public ResponseContext findResponseForPostOperationWithPathAndMessage(String path, String message) throws IOException, XPathExpressionException, JAXBException, InterruptedException {
         LOGGER.debug("About to find response for post operation with path: {}", path);
-        if (this.postConfigurations.containsKey(path)) {
-            LOGGER.debug("... found, proceeding to the data part...");
-            Configuration configuration = this.postConfigurations.get(path);
-            // Iterate the resources, and verify whether the xpath matches with the data
-            ResourceGroups resourceGroups = configuration.getResourceGroups();
-            for (ResourceGroup resourceGroup : resourceGroups.getResourceGroup()) {
-                if (resourceGroup.getXpathConfig() != null) {
-                    LOGGER.debug("... found xpath: {}", resourceGroup.getXpathConfig().getXpath());
-                    if (this.xpathEvaluator.evaluateXpathExpression(resourceGroup.getXpathConfig().getXpath(), message, configuration)) {
-                        LOGGER.debug("... xpath matched, about to find associated resource");
-                        return this.readResourceCacheOrFile(resourceGroup.getSimpleResource());
-                    }
-                } else {
-                    LOGGER.debug("No xpath configured, about to load the data from: {}", resourceGroup.getSimpleResource().getResource());
-                    return this.readResourceCacheOrFile(resourceGroup.getSimpleResource());
-                }
+        Configuration configuration = findMatchingConfigurationForPathByKey(this.postConfigurations, path);
+        if (configuration!=null) {
+            LOGGER.debug("... found, checking for script to execute...");
+            if (!(configuration.getScript()==null)) {
+            	LOGGER.debug("... found, about to retrieve script from configuration...");
+            	Script script = configuration.getScript();
+            	LOGGER.debug("... done, proceeding to execution of [{}]", script.getScriptSource());
+            	return this.invokeMethodFromScriptWithParameter(script, new Object[]{path, message});
+            } else {
+            	LOGGER.debug("... not found, proceeding to the data part...");
+            	// Iterate the resources, and verify whether the xpath matches with the data
+            	ResourceGroups resourceGroups = configuration.getResourceGroups();
+            	for (ResourceGroup resourceGroup : resourceGroups.getResourceGroup()) {
+            		if (resourceGroup.getXpathConfig() != null) {
+            			LOGGER.debug("... found xpath: {}", resourceGroup.getXpathConfig().getXpath());
+            			if (this.xpathEvaluator.evaluateXpathExpression(resourceGroup.getXpathConfig().getXpath(), message, configuration)) {
+            				LOGGER.debug("... xpath matched, about to find associated resource");
+            				return this.readResourceCacheOrFile(resourceGroup.getSimpleResource());
+            			}
+            		} else {
+            			LOGGER.debug("No xpath configured, about to load the data from: {}", resourceGroup.getSimpleResource().getResource());
+            			return this.readResourceCacheOrFile(resourceGroup.getSimpleResource());
+            		}
+            	}
             }
         }
         LOGGER.debug("... not found!");
@@ -215,7 +238,7 @@ public class ConfigurationManager {
             LOGGER.debug("About to delay {} ms", resource.getDelay());
             Thread.sleep(resource.getDelay());
         }
-        // Apply response
+        // Create response
         ResponseContext responseContext = new ResponseContext();
         if (resource.getCachedData() == null) {
             if (this.pathToDataFolder == null) {
@@ -224,12 +247,10 @@ public class ConfigurationManager {
                 resource.setCachedData(this.readFromReferencedPath(resource.getResource()));
             }
         }
-        // Apply content type
         responseContext.setResponse(resource.getCachedData());
-        if (resource.getContentType() != null) {
-            responseContext.setContentType(resource.getContentType());
-        } else {
-            responseContext.setContentType(this.fallbackLogicForContentType(resource));
+        if (resource.getResource().endsWith(".xml")) {
+            // TODO: refactor using proper mime-types in config
+            responseContext.setContentType(ResponseContext.XML_CONTENT_TYPE);
         }
         // Apply custom error (only when applicable)
         if (resource.getErrorRate() > 0) {
@@ -238,14 +259,6 @@ public class ConfigurationManager {
             }
         }
         return responseContext;
-    }
-
-    private String fallbackLogicForContentType(SimpleResource resource) {
-        if (resource.getResource().endsWith(".xml")) {
-            return ResponseContext.XML_CONTENT_TYPE;
-        } else {
-            return ResponseContext.DEFAULT_CONTENT_TYPE;
-        }
     }
 
     private String readFromPackagedFile(String resourceReference) throws IOException {
@@ -261,6 +274,41 @@ public class ConfigurationManager {
     }
 
     /**
+     * Auxiliary method to match a Configuration key to a path.
+     *
+     * @return
+     *  The matched Configuration.
+     */
+    private Configuration findMatchingConfigurationForPathByKey(Map<String, Configuration> configurations, String path) {
+    	if (configurations.containsKey(path)) {
+    		return configurations.get(path);
+    	}
+    	for (Entry<String, Configuration> entry : configurations.entrySet()) {
+    		if (path.startsWith(entry.getKey())) {
+    			return entry.getValue();
+    		}
+    	}
+    	return null;
+    }
+
+    /**
+     * Auxiliary method to execute the script from the configuration.
+     *
+     * @return
+     *  The data associated with the resource (i.e. response).
+     */
+    private ResponseContext invokeMethodFromScriptWithParameter(Script script, Object[] parameters) {
+    	ResponseContext responseContext = new ResponseContext();
+    	LOGGER.debug("About to execute script {} ...", script.getScriptSource());
+    	String scriptOutput = (String) script.getGroovy().invokeMethod(SCRIPT_METHOD, parameters);
+    	LOGGER.debug("Result of script execution {} ...", scriptOutput);
+    	responseContext.setResponse(scriptOutput);
+    	responseContext.setContentType("application/json");
+    	responseContext.setErrorCode( "200" );
+    	return responseContext;
+    }
+    
+    /**
      * Auxiliary method to generate a random number. This number will be in the range of [1, 100].
      *
      * @return
@@ -269,5 +317,4 @@ public class ConfigurationManager {
     protected int generateRandom() {
         return (int)(Math.random() * 100 + 1);
     }
-
 }

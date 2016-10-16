@@ -2,6 +2,8 @@ package net.technolords.micro.config.jaxb;
 
 import java.util.Map;
 
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlTransient;
@@ -9,10 +11,15 @@ import javax.xml.bind.annotation.XmlTransient;
 import net.technolords.micro.config.jaxb.namespace.NamespaceList;
 import net.technolords.micro.config.jaxb.resource.ResourceGroups;
 import net.technolords.micro.config.jaxb.resource.SimpleResource;
+import net.technolords.micro.config.jaxb.script.Script;
 
+/**
+ * Created by Technolords on 2016-Jul-20.
+ */
 public class Configuration {
     private String type;
     private String url;
+    private Script script;
     private SimpleResource simpleResource;
     private ResourceGroups resourceGroups;
     private NamespaceList namespaceList;
@@ -61,6 +68,15 @@ public class Configuration {
 
     public void setNamespaceList(NamespaceList namespaceList) {
         this.namespaceList = namespaceList;
+    }
+    
+    @XmlElement(name = "script")
+    public Script getScript() {
+    	return this.script;
+    }
+    
+    public void setScript(Script script) {
+        this.script = script;	
     }
 
     @XmlTransient

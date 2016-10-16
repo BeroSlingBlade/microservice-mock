@@ -1,5 +1,7 @@
 package net.technolords.micro.processor;
 
+import org.testng.annotations.Test;
+import org.testng.AssertJUnit;
 import net.technolords.micro.TestSupport;
 import net.technolords.micro.config.ConfigurationManager;
 import org.apache.camel.Exchange;
@@ -30,13 +32,17 @@ public class ResponseProcessorTest extends TestSupport{
         };
     }
 
-    @Test(dataProvider = DATASET_FOR_CONFIGURATIONS)
+    @Test(dataProvider = DATASET_FOR_CONFIGURATIONS, enabled = true)
     public void testPostResponses(String configFile, String method, String uri, String body, String expectedResponse) throws Exception {
         // Create a path to the file
         Path pathToConfigFile = FileSystems.getDefault().getPath(getPathToDataFolder() + File.separator + "mockConfigurations" + File.separator);
+        System.out.println(pathToConfigFile.toString());
         Path pathToResponseFile = FileSystems.getDefault().getPath(getPathToDataFolder() + File.separator + "mockResponses");
+        System.out.println(pathToResponseFile.toString());
         String responseContent = new String(Files.readAllBytes(Paths.get(pathToResponseFile + File.separator + expectedResponse)));
+        System.out.println(responseContent);
         String pathToConfig = pathToConfigFile + File.separator +configFile;
+        System.out.println(pathToConfig.toString());
 
         Exchange exchange = this.generateExchange(method, uri, body);
         ConfigurationManager configurationManager = new ConfigurationManager(pathToConfig, null);
@@ -45,7 +51,7 @@ public class ResponseProcessorTest extends TestSupport{
 
         //Assertions
         String actualResponse = exchange.getIn().getBody(String.class);
-        Assert.assertEquals(actualResponse, responseContent);
+        AssertJUnit.assertEquals(actualResponse, responseContent);
     }
 
     private Exchange generateExchange(String method, String uri, String body) throws IOException {
@@ -55,6 +61,7 @@ public class ResponseProcessorTest extends TestSupport{
         exchange.getIn().setHeader(Exchange.HTTP_URI, uri);
         if (body != null) {
             String requestContent = new String(Files.readAllBytes(Paths.get(pathToRequestFile + File.separator + body)));
+            System.out.println(requestContent);
             exchange.getIn().setBody(requestContent);
         }
         return exchange;

@@ -1,13 +1,21 @@
 package net.technolords.micro.processor;
 
+import java.util.Map;
+import java.util.Map.Entry;
+
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import groovy.lang.GroovyClassLoader;
+import groovy.lang.GroovyObject;
 import net.technolords.micro.ResponseContext;
 import net.technolords.micro.config.ConfigurationManager;
 
+/**
+ * Created by Technolords on 2016-Jul-20.
+ */
 public class ResponseProcessor implements Processor {
     private final Logger LOGGER = LoggerFactory.getLogger(getClass());
     private static final String CONTENT_TYPE = "Content-Type";
